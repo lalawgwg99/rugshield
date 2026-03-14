@@ -32,12 +32,14 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch all data in parallel
-    const [tokenInfo, marketData, largestAccounts] = await Promise.all([
+    // Fetch basic info and market data in parallel
+    const [tokenInfo, marketData] = await Promise.all([
       getTokenBasicInfo(tokenAddress),
       getMarketData(tokenAddress),
-      getTokenLargestAccounts(tokenAddress),
     ]);
+
+    // Fetch largest accounts using the supply we just got
+    const largestAccounts = await getTokenLargestAccounts(tokenAddress, tokenInfo?.supply);
 
     // Build token data
     const tokenData: TokenData = {
@@ -80,7 +82,6 @@ export async function GET(request: NextRequest) {
 
     // Pattern matching
     const patterns = matchRugPatterns(tokenData, marketData);
-    const cloneCheck = checkCloneDetection(tokenData.name, tokenData.symbol);
 
     // Build timeline
     const timeline: TimelineEvent[] = [];
@@ -110,6 +111,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Calculate confidence score
+    let confidence = 10;
+    if (marketData) confidence += 30;
+    if (holderDistribution) confidence += 25;
+    if (forensics && forensics.tokensCreated > 0) confidence += 20;
+    if (tokenData.createdAt) confidence += 15;
+
     // Generate AI verdict
     const tempReport: AuditReport = {
       token: tokenData,
@@ -117,7 +125,7 @@ export async function GET(request: NextRequest) {
       holders: holderDistribution,
       overallScore,
       riskLevel,
-      confidence: 85,
+      confidence,
       checks,
       verdict: '',
       verdictZh: '',

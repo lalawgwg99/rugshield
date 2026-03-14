@@ -24,13 +24,14 @@ export async function runAuditChecks(input: AnalyzerInput): Promise<AuditCheck[]
   const { tokenAddress } = input;
 
   // Fetch data in parallel
-  const [market, largestAccounts, freezeAuth, mintAuth, supply] = await Promise.all([
+  const [market, freezeAuth, mintAuth, supply] = await Promise.all([
     input.marketData !== undefined ? input.marketData : getMarketData(tokenAddress),
-    getTokenLargestAccounts(tokenAddress),
     checkFreezeAuthority(tokenAddress),
     checkMintAuthority(tokenAddress),
     getTokenSupply(tokenAddress),
   ]);
+
+  const largestAccounts = await getTokenLargestAccounts(tokenAddress, supply?.amount);
 
   const holders = largestAccounts;
 
@@ -62,11 +63,12 @@ export async function runAuditChecks(input: AnalyzerInput): Promise<AuditCheck[]
   const volume = market?.volume24h || 0;
   const mcap = market?.marketCap || 1;
   const volMcapRatio = mcap > 0 ? volume / mcap : 0;
+  // Fixed: check > 10 first (was reversed — > 5 matched before > 10 could)
   checks.push({
     id: 'volume_analysis',
     name: 'Volume Analysis',
     nameZh: '交易量分析',
-    status: volMcapRatio > 5 ? 'warn' : volMcapRatio > 10 ? 'fail' : 'pass',
+    status: volMcapRatio > 10 ? 'fail' : volMcapRatio > 5 ? 'warn' : 'pass',
     score: volMcapRatio > 10 ? 2 : volMcapRatio > 5 ? 5 : 8,
     details: `Volume/MCap ratio: ${volMcapRatio.toFixed(2)}x${volMcapRatio > 5 ? ' (possible wash trading)' : ''}`,
     detailsZh: `交易量/市值比: ${volMcapRatio.toFixed(2)}x${volMcapRatio > 5 ? '（可能為刷量交易）' : ''}`,

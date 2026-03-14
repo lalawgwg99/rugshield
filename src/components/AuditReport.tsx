@@ -8,7 +8,7 @@ import { MoneyFlow } from './MoneyFlow';
 import { LifecycleBar } from './LifecycleBar';
 import { RugCountdown } from './RugCountdown';
 import { InsurancePanel } from './InsurancePanel';
-import { shortenAddress, timeAgo } from '@/lib/utils';
+import { shortenAddress } from '@/lib/utils';
 import {
   CheckCircle2,
   AlertTriangle,
@@ -25,6 +25,7 @@ interface AuditReportProps {
 
 export function AuditReport({ report }: AuditReportProps) {
   const [copied, setCopied] = useState(false);
+  const [now] = useState(() => Date.now());
 
   const copyAddress = () => {
     navigator.clipboard.writeText(report.token.address);
@@ -46,13 +47,15 @@ export function AuditReport({ report }: AuditReportProps) {
               <code className="text-sm text-gray-400 font-mono">
                 {shortenAddress(report.token.address, 6)}
               </code>
-              <button onClick={copyAddress} className="text-gray-500 hover:text-gray-300">
+              <button onClick={copyAddress} title="Copy address" aria-label="Copy address" className="text-gray-500 hover:text-gray-300">
                 <Copy className="h-3.5 w-3.5" />
               </button>
               <a
                 href={`https://solscan.io/token/${report.token.address}`}
                 target="_blank"
                 rel="noopener noreferrer"
+                title="View on Solscan"
+                aria-label="View on Solscan"
                 className="text-gray-500 hover:text-cyan-400"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -266,7 +269,7 @@ export function AuditReport({ report }: AuditReportProps) {
         <RugCountdown
           ageHours={
             report.token.createdAt
-              ? (Date.now() - report.token.createdAt) / 3600000
+              ? (now - report.token.createdAt) / 3600000
               : 0
           }
           avgSurvivalHours={report.patterns.avgSurvivalHours}

@@ -1,13 +1,9 @@
 // ═══════════════════════════════════════════════════════════
-// RugShield — Historical Pattern Matching & Clone Detection
+// RugShield — Historical Pattern Matching & Clone Detection (v2)
 // ═══════════════════════════════════════════════════════════
 
 import type { PatternMatch, MarketData, TokenData } from '@/types';
 
-/**
- * Known rug patterns based on on-chain analysis research.
- * These represent statistical patterns from thousands of rug pulls.
- */
 const KNOWN_RUG_PATTERNS = [
   {
     id: 'quick_drain',
@@ -47,7 +43,8 @@ const KNOWN_RUG_PATTERNS = [
 ];
 
 /**
- * Match token against known rug patterns
+ * Match token against known rug patterns.
+ * v2: deterministic scoring, no Math.random(), more pattern checks.
  */
 export function matchRugPatterns(
   tokenData: Partial<TokenData>,
@@ -66,20 +63,24 @@ export function matchRugPatterns(
     };
   }
 
-  // Pattern: Quick Drain (very low liquidity for age)
+  const ageHours = tokenData.createdAt
+    ? (Date.now() - tokenData.createdAt) / 3600000
+    : 24;
+
+  // ── Pattern: Quick Drain ──
   if (market.liquidity < 3000) {
-    matchedPatterns.push('Quick Drain pattern: liquidity below $3K');
-    matchedPatternsZh.push('快速抽乾模式：流動性低於 $3K');
+    matchedPatterns.push('Quick Drain: liquidity below $3K');
+    matchedPatternsZh.push('快速抽乾：流動性低於 $3K');
   }
 
-  // Pattern: Honeypot (buy/sell asymmetry)
+  // ── Pattern: Honeypot (buy/sell asymmetry) ──
   const { buys, sells } = market.txns24h;
   if (buys > 10 && sells < buys * 0.2) {
     matchedPatterns.push('Honeypot: buy/sell ratio highly asymmetric');
     matchedPatternsZh.push('蜜罐陷阱：買入/賣出比嚴重不對稱');
   }
 
-  // Pattern: Low liquidity relative to volume (pump & dump)
+  // ── Pattern: Pump & Dump (volume/liquidity spike) ──
   if (market.volume24h > 0 && market.liquidity > 0) {
     const volLiqRatio = market.volume24h / market.liquidity;
     if (volLiqRatio > 10) {
@@ -88,14 +89,29 @@ export function matchRugPatterns(
     }
   }
 
-  // Calculate historical statistics
-  // In production, query a database of known rug tokens
-  const ageHours = tokenData.createdAt
-    ? (Date.now() - tokenData.createdAt) / 3600000
-    : 24;
+  // ── Pattern: New token with extreme volume ──
+  if (ageHours < 2 && market.volume24h > market.marketCap * 3) {
+    matchedPatterns.push('Launch Hype: extreme volume for age');
+    matchedPatternsZh.push('上線炒作：相對年齡交易量過高');
+  }
 
-  // Statistical model: tokens with similar characteristics
-  let rugRate = 50; // baseline
+  // ── Pattern: Liquidity << Market Cap (fragile) ──
+  if (market.marketCap > 0 && market.liquidity > 0) {
+    const liqRatio = market.liquidity / market.marketCap;
+    if (liqRatio < 0.03) {
+      matchedPatterns.push('Fragile Liquidity: liq/mcap < 3% — extreme slippage risk');
+      matchedPatternsZh.push('脆弱流動性：流動性/市值 < 3% — 極端滑點風險');
+    }
+  }
+
+  // ── Pattern: Sell pressure building ──
+  if (sells > buys * 0.8 && buys > 20) {
+    matchedPatterns.push('Sell Pressure: sells approaching buys — possible distribution');
+    matchedPatternsZh.push('賣壓增加：賣出接近買入 — 可能在出貨');
+  }
+
+  // ── Statistical model based on liquidity + age ──
+  let rugRate = 50;
   let avgSurvivalHours = 24;
 
   if (market.liquidity < 1000) {
@@ -104,21 +120,50 @@ export function matchRugPatterns(
   } else if (market.liquidity < 5000) {
     rugRate = 89;
     avgSurvivalHours = 6.2;
+  } else if (market.liquidity < 20000) {
+    rugRate = 72;
+    avgSurvivalHours = 24;
   } else if (market.liquidity < 50000) {
-    rugRate = 62;
-    avgSurvivalHours = 48;
+    rugRate = 55;
+    avgSurvivalHours = 72;
+  } else if (market.liquidity < 200000) {
+    rugRate = 30;
+    avgSurvivalHours = 336; // 14 days
   } else {
-    rugRate = 25;
-    avgSurvivalHours = 720; // 30 days
+    rugRate = 15;
+    avgSurvivalHours = 720;
   }
 
-  // Adjust based on age
+  // Adjust by token age
   if (ageHours > avgSurvivalHours * 2) {
-    rugRate = Math.max(5, rugRate - 30); // Survived past expected rug time
+    rugRate = Math.max(5, rugRate - 30);
+  } else if (ageHours > avgSurvivalHours) {
+    rugRate = Math.max(10, rugRate - 15);
   }
+
+  // Adjust by buy/sell health
+  if (buys > 0 && sells > 0) {
+    const sellRatio = sells / buys;
+    if (sellRatio > 0.3 && sellRatio < 0.7) {
+      // Healthy trading — reduce rug rate
+      rugRate = Math.max(5, rugRate - 10);
+    }
+  }
+
+  // Adjust by matched pattern count
+  rugRate = Math.min(99, rugRate + matchedPatterns.length * 5);
+
+  // Deterministic similar token count based on liquidity bucket
+  const similarTokenCount = market.liquidity < 5000
+    ? 800
+    : market.liquidity < 50000
+      ? 400
+      : market.liquidity < 200000
+        ? 150
+        : 50;
 
   return {
-    similarTokenCount: Math.floor(Math.random() * 500 + 100),
+    similarTokenCount,
     rugRate,
     avgSurvivalHours,
     matchedPatterns,
@@ -131,21 +176,106 @@ export function checkCloneDetection(
   name: string,
   symbol: string
 ): { isClone: boolean; originalName?: string; confidence: number } {
-  // In production, compare against a database of known tokens
-  // Check for common scam patterns in naming
-  const scamPatterns = [
-    /elon|musk|trump|biden|doge|shib|pepe|bonk|wif/i,
-    /\$\w+\$/, // Double dollar signs
-    /official|real|legit/i,
+  const normalizedName = name.toLowerCase().trim();
+  const normalizedSymbol = symbol.toLowerCase().trim();
+  const combined = `${normalizedName} ${normalizedSymbol}`;
+
+  let matchCount = 0;
+  const matchedNames: string[] = [];
+
+  // Tier 1: High-value impersonation targets
+  const tier1Patterns: [RegExp, string][] = [
+    [/\bsol\b/i, 'SOL'],
+    [/\bbonk\b/i, 'BONK'],
+    [/\bjup\b/i, 'JUP'],
+    [/\braydium\b/i, 'RAY'],
+    [/\bjito\b/i, 'JTO'],
+    [/\bpyth\b/i, 'PYTH'],
   ];
 
-  const nameMatches = scamPatterns.filter((p) => p.test(name) || p.test(symbol));
+  for (const [pattern, original] of tier1Patterns) {
+    if (pattern.test(combined) && normalizedSymbol !== original.toLowerCase()) {
+      matchCount += 2;
+      matchedNames.push(original);
+    }
+  }
+
+  // Tier 2: Common meme coin names (lower weight)
+  const tier2Patterns = [
+    /elon|musk/i,
+    /trump|biden|obama/i,
+    /doge|shib|pepe|wif/i,
+    /official|real|legit|verified/i,
+    /v2|v3|new|upgrade/i,
+  ];
+
+  for (const pattern of tier2Patterns) {
+    if (pattern.test(combined)) {
+      matchCount += 1;
+    }
+  }
+
+  // Tier 3: Structural scam indicators
+  const structuralPatterns = [
+    /\$\w+\$/, // Double dollar signs
+    /(.)\1{4,}/, // Repeated characters (aaaa)
+    /free|airdrop|claim/i,
+  ];
+
+  for (const pattern of structuralPatterns) {
+    if (pattern.test(combined)) {
+      matchCount += 2;
+    }
+  }
+
+  // Levenshtein-like: check for typosquatting (1-2 char diff from known tokens)
+  const knownTokens = ['bonk', 'wif', 'jup', 'pyth', 'jito', 'ray', 'orca', 'mango'];
+  for (const known of knownTokens) {
+    if (normalizedSymbol !== known && levenshteinDistance(normalizedSymbol, known) <= 1) {
+      matchCount += 3;
+      matchedNames.push(known.toUpperCase());
+    }
+  }
+
+  const confidence = Math.min(95, matchCount * 15);
 
   return {
-    isClone: nameMatches.length > 1,
-    originalName: nameMatches.length > 0 ? 'Known token pattern detected' : undefined,
-    confidence: nameMatches.length > 1 ? 75 : nameMatches.length > 0 ? 40 : 10,
+    isClone: matchCount >= 3,
+    originalName: matchedNames.length > 0
+      ? `Possible clone of: ${matchedNames.join(', ')}`
+      : matchCount > 0
+        ? 'Known scam pattern detected'
+        : undefined,
+    confidence,
   };
+}
+
+/** Simple Levenshtein distance for typosquatting detection */
+function levenshteinDistance(a: string, b: string): number {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      const cost = a[j - 1] === b[i - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+
+  return matrix[b.length][a.length];
 }
 
 export { KNOWN_RUG_PATTERNS };

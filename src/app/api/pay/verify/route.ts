@@ -3,7 +3,7 @@ import { PumpAgent } from '@pump-fun/agent-payments-sdk';
 import { PublicKey, Connection } from '@solana/web3.js';
 
 export async function POST(req: NextRequest) {
-  const { walletAddress, invoice, signature } = await req.json();
+  const { walletAddress, invoice } = await req.json();
   
   const connection = new Connection(process.env.SOLANA_RPC_URL!);
   const agentMint = new PublicKey(process.env.AGENT_TOKEN_MINT_ADDRESS!);

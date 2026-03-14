@@ -79,45 +79,13 @@ export async function getMarketData(
 
 /** Fetch price chart data points (using pair chart endpoint) */
 export async function getPriceHistory(
-  tokenAddress: string,
-  hours = 24
+  _tokenAddress: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _hours = 24
 ): Promise<PricePoint[]> {
-  try {
-    // First get the pair address
-    const marketData = await getMarketData(tokenAddress);
-    if (!marketData?.pairAddress) return [];
-
-    // DexScreener chart data
-    const res = await fetch(
-      `https://api.dexscreener.com/orders/v1/solana/${tokenAddress}`,
-      { next: { revalidate: 60 } }
-    );
-
-    if (!res.ok) return [];
-
-    // Generate simulated price history based on 24h data
-    // (DexScreener doesn't expose granular chart data in free API)
-    const points: PricePoint[] = [];
-    const now = Date.now();
-    const interval = (hours * 3600 * 1000) / 48; // 48 data points
-
-    for (let i = 0; i < 48; i++) {
-      const t = now - (48 - i) * interval;
-      const noise = (Math.random() - 0.5) * 0.1;
-      const trend = marketData.priceChange24h / 100;
-      const progress = i / 48;
-      const price =
-        marketData.priceUsd / (1 + trend * (1 - progress)) * (1 + noise);
-      points.push({
-        timestamp: t,
-        price: Math.max(price, marketData.priceUsd * 0.01),
-      });
-    }
-
-    return points;
-  } catch {
-    return [];
-  }
+  // DexScreener free API does not provide granular chart data.
+  // Returning empty array instead of simulated mock data.
+  return [];
 }
 
 /** Search for a token by name or symbol */

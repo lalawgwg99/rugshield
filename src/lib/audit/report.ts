@@ -2,7 +2,7 @@
 // RugShield — AI Bilingual Report Generator (OpenRouter)
 // ═══════════════════════════════════════════════════════════
 
-import type { AuditReport, AuditCheck, ForensicsReport, SimulationResult, PatternMatch } from '@/types';
+import type { AuditReport } from '@/types';
 
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || '';

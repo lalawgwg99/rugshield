@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { calculatePremium, getPremiumTierDescription } from '@/lib/insurance/pricing';
 import { Shield, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { shortenAddress } from '@/lib/utils';
+
 
 interface InsurancePanelProps {
   tokenAddress: string;
@@ -66,10 +66,11 @@ export function InsurancePanel({
 
       {/* Purchase amount input */}
       <div className="mb-4">
-        <label className="text-xs text-gray-400">
+        <label htmlFor="coverage" className="text-xs text-gray-400">
           投保金額 (USDC) / Coverage Amount
         </label>
         <input
+          id="coverage"
           type="number"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}

@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════
 
 import { Connection, PublicKey } from '@solana/web3.js';
-import type { TokenData, HolderData, HolderDistribution } from '@/types';
+import type { TokenData, HolderData } from '@/types';
 
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://rpc.solanatracker.io/public';
 
@@ -36,14 +36,21 @@ export async function getTokenSupply(mintAddress: string): Promise<{
 
 /** Get largest token accounts (top holders) */
 export async function getTokenLargestAccounts(
-  mintAddress: string
+  mintAddress: string,
+  totalSupplyStr?: string
 ): Promise<HolderData[]> {
   try {
     const conn = getConnection();
     const mint = new PublicKey(mintAddress);
     const accounts = await conn.getTokenLargestAccounts(mint);
-    const totalSupply = await getTokenSupply(mintAddress);
-    const supplyNum = totalSupply ? Number(totalSupply.amount) : 1;
+    
+    let supplyNum = 1;
+    if (totalSupplyStr) {
+      supplyNum = Number(totalSupplyStr) || 1;
+    } else {
+      const supply = await getTokenSupply(mintAddress);
+      supplyNum = supply ? Number(supply.amount) : 1;
+    }
 
     return accounts.value.map((acc, i) => ({
       address: acc.address.toBase58(),
@@ -127,7 +134,6 @@ export async function getTokenBasicInfo(
 
     const conn = getConnection();
     const mint = new PublicKey(mintAddress);
-    const info = await conn.getAccountInfo(mint);
     const signatures = await conn.getSignaturesForAddress(mint, { limit: 1 });
 
     return {

@@ -61,8 +61,8 @@ export default function RadarPage() {
       if (verified) {
         setSubscribed(true);
       }
-    } catch (err: any) {
-      setSubError(err.message || 'Subscription failed');
+    } catch (err: unknown) {
+      setSubError(err instanceof Error ? err.message : 'Subscription failed');
     } finally {
       setSubscribing(false);
     }

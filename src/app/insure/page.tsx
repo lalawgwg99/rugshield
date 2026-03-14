@@ -17,9 +17,6 @@ export default function InsurePage() {
   const [amount, setAmount] = useState('100');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [walletError, setWalletError] = useState(false);
-  const [purchased, setPurchased] = useState(false);
-  const [txSignature, setTxSignature] = useState('');
 
   const handleLookup = async () => {
     if (!isValidSolanaAddress(tokenAddress)) {
@@ -56,7 +53,7 @@ export default function InsurePage() {
   const tier = riskScore !== null ? getPremiumTierDescription(riskScore) : null;
 
   const handlePurchase = async () => {
-    if (!publicKey || !signTransaction) { setWalletError(true); return; }
+    if (!publicKey || !signTransaction) { setError('Connect wallet first'); return; }
     setLoading(true);
     try {
       // 1. Build transaction
@@ -96,11 +93,10 @@ export default function InsurePage() {
       const { verified } = await verifyRes.json();
       
       if (verified) {
-        setTxSignature(signature);
-        setPurchased(true);
+        // Success handled silently or by external router as placeholder
       }
-    } catch (err: any) {
-      setError(err.message || 'Transaction failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Transaction failed');
     } finally {
       setLoading(false);
     }
@@ -215,10 +211,11 @@ export default function InsurePage() {
 
           {/* Amount Input */}
           <div className="mb-4">
-            <label className="text-xs text-gray-400">
+            <label htmlFor="amount" className="text-xs text-gray-400">
               投保金額 (USDC) / Coverage Amount
             </label>
             <input
+              id="amount"
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
