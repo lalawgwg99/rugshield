@@ -34,7 +34,7 @@ export function calculatePremium(
     premiumRate = 0.06; // 6%
   } else {
     premiumRate = 0.10; // 10%
-    if (riskScore < 2) {
+    if (riskScore <= 1) {
       eligible = false;
       reason = 'Token risk too high for insurance coverage';
       reasonZh = '代幣風險過高，無法提供保險';

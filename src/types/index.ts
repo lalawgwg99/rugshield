@@ -222,30 +222,28 @@ export interface AuditApiResponse {
   error?: string;
 }
 
-export interface PaymentBuildRequest {
-  walletAddress: string;
-  serviceType: 'radar' | 'insurance' | 'full_audit';
-  amount: number;
-  tokenAddress?: string;
+export interface Invoice {
+  memo: string;
+  startTime: string;
+  endTime: string;
+  amount: string;
+  serviceType: string;
 }
 
 export interface PaymentBuildResponse {
-  success: boolean;
-  transaction?: string; // base64 encoded
-  invoiceId?: string;
-  error?: string;
+  transaction: string; // base64 encoded Solana transaction
+  invoice: Invoice;
 }
 
 export interface PaymentVerifyRequest {
   walletAddress: string;
-  invoiceId: string;
+  invoice: Invoice;
   signature: string;
 }
 
 export interface PaymentVerifyResponse {
-  success: boolean;
   verified: boolean;
-  error?: string;
+  serviceType: string;
 }
 
 export interface RadarApiResponse {

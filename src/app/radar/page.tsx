@@ -3,15 +3,70 @@
 import { useState, useEffect } from 'react';
 import { RadarAlertCard } from '@/components/RadarAlert';
 import type { RadarAlert, RadarApiResponse } from '@/types';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { Transaction } from '@solana/web3.js';
 import { Radar, Lock, Loader2, RefreshCw } from 'lucide-react';
 
 export default function RadarPage() {
-  const { connected } = useWallet();
+  const { connected, publicKey, signTransaction } = useWallet();
+  const { connection } = useConnection();
   const [alerts, setAlerts] = useState<RadarAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>('all');
-  const [subscribed] = useState(false); // Would come from backend in production
+  const [subscribed, setSubscribed] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [subError, setSubError] = useState('');
+
+  const handleSubscribe = async () => {
+    if (!publicKey || !signTransaction) return;
+    setSubscribing(true);
+    setSubError('');
+    try {
+      // 1. Build transaction
+      const res = await fetch('/api/pay', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: publicKey.toBase58(),
+          amount: 5,
+          serviceType: 'radar',
+        }),
+      });
+      const { transaction: txBase64, invoice } = await res.json();
+
+      // 2. Sign with wallet
+      const tx = Transaction.from(Buffer.from(txBase64, 'base64'));
+      const signedTx = await signTransaction(tx);
+
+      // 3. Send to chain
+      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+      });
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+      await connection.confirmTransaction({ signature, ...latestBlockhash }, 'confirmed');
+
+      // 4. Verify on server
+      const verifyRes = await fetch('/api/pay/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: publicKey.toBase58(),
+          invoice,
+          signature,
+        }),
+      });
+      const { verified } = await verifyRes.json();
+
+      if (verified) {
+        setSubscribed(true);
+      }
+    } catch (err: any) {
+      setSubError(err.message || 'Subscription failed');
+    } finally {
+      setSubscribing(false);
+    }
+  };
 
   const fetchAlerts = async () => {
     setLoading(true);
@@ -124,11 +179,19 @@ export default function RadarPage() {
                 <li>• 即時推送 / Real-time push notifications</li>
               </ul>
               <button
-                disabled={!connected}
+                onClick={handleSubscribe}
+                disabled={!connected || subscribing}
                 className="mt-3 rounded-lg bg-yellow-600 px-4 py-2 text-xs font-medium text-white hover:bg-yellow-500 disabled:opacity-50 transition-colors"
               >
-                {!connected ? '連接錢包訂閱 / Connect to Subscribe' : '訂閱 5 USDC/月 / Subscribe'}
+                {!connected
+                  ? '連接錢包訂閱 / Connect to Subscribe'
+                  : subscribing
+                  ? '處理中 / Processing...'
+                  : '訂閱 5 USDC/月 / Subscribe'}
               </button>
+              {subError && (
+                <p className="mt-2 text-xs text-red-400">{subError}</p>
+              )}
             </div>
           </div>
         </div>

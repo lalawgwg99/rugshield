@@ -1,55 +1,46 @@
-// ═══════════════════════════════════════════════════════════
-// RugShield — Payment Build API Route
-// ═══════════════════════════════════════════════════════════
-
 import { NextRequest, NextResponse } from 'next/server';
-import type { PaymentBuildRequest, PaymentBuildResponse } from '@/types';
+import { PumpAgent } from '@pump-fun/agent-payments-sdk';
+import { PublicKey, Connection, Transaction, ComputeBudgetProgram } from '@solana/web3.js';
 
-export async function POST(request: NextRequest) {
-  try {
-    const body: PaymentBuildRequest = await request.json();
-    const { walletAddress, serviceType, amount, tokenAddress } = body;
-
-    if (!walletAddress || !serviceType || !amount) {
-      return NextResponse.json<PaymentBuildResponse>(
-        { success: false, error: 'Missing required fields / 缺少必要欄位' },
-        { status: 400 }
-      );
-    }
-
-    // Validate amount
-    if (amount <= 0 || amount > 10000) {
-      return NextResponse.json<PaymentBuildResponse>(
-        { success: false, error: 'Invalid amount (1-10,000 USDC) / 金額無效' },
-        { status: 400 }
-      );
-    }
-
-    // In production, build a pump.fun payment transaction:
-    // 1. Create an invoice via pump.fun API
-    // 2. Build the transaction using buildAcceptPaymentInstructions
-    // 3. Return base64 encoded transaction for client signing
-
-    // For now, generate a mock invoice ID
-    const invoiceId = `INV-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase();
-
-    // Store invoice details (in production, use a database)
-    // This would track: walletAddress, serviceType, amount, tokenAddress, status
-
-    return NextResponse.json<PaymentBuildResponse>({
-      success: true,
-      invoiceId,
-      // In production: transaction would be the base64-encoded Solana transaction
-      transaction: undefined,
-    });
-  } catch (error) {
-    console.error('Payment build error:', error);
-    return NextResponse.json<PaymentBuildResponse>(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : 'Payment build failed / 付款建立失敗',
-      },
-      { status: 500 }
-    );
-  }
+export async function POST(req: NextRequest) {
+  const { walletAddress, amount, serviceType } = await req.json();
+  
+  const connection = new Connection(process.env.SOLANA_RPC_URL!);
+  const agentMint = new PublicKey(process.env.AGENT_TOKEN_MINT_ADDRESS!);
+  const currencyMint = new PublicKey(process.env.CURRENCY_MINT!);
+  
+  const agent = new PumpAgent(agentMint, 'mainnet', connection);
+  const userPublicKey = new PublicKey(walletAddress);
+  
+  // Generate unique invoice params
+  const memo = String(Math.floor(Math.random() * 900000000000) + 100000);
+  const now = Math.floor(Date.now() / 1000);
+  const startTime = String(now);
+  const endTime = String(now + 86400); // 24h validity
+  const amountSmallest = String(Math.round(amount * 1_000_000)); // USDC 6 decimals
+  
+  const instructions = await agent.buildAcceptPaymentInstructions({
+    user: userPublicKey,
+    currencyMint,
+    amount: amountSmallest,
+    memo,
+    startTime,
+    endTime,
+  });
+  
+  const { blockhash } = await connection.getLatestBlockhash('confirmed');
+  const tx = new Transaction();
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = userPublicKey;
+  tx.add(
+    ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+    ...instructions
+  );
+  
+  const serializedTx = tx.serialize({ requireAllSignatures: false }).toString('base64');
+  
+  return NextResponse.json({
+    transaction: serializedTx,
+    invoice: { memo, startTime, endTime, amount: amountSmallest, serviceType },
+  });
 }

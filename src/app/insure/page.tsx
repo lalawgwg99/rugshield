@@ -1,20 +1,25 @@
 'use client';
 
 import { useState } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
+import { useWallet, useConnection } from '@solana/wallet-adapter-react';
+import { Transaction } from '@solana/web3.js';
 import { Shield, CheckCircle2, AlertTriangle, Loader2, Search } from 'lucide-react';
 import { isValidSolanaAddress, shortenAddress } from '@/lib/utils';
 import { calculatePremium, getPremiumTierDescription } from '@/lib/insurance/pricing';
 import { getRiskLevel, getRiskColor, getRiskEmoji } from '@/lib/utils';
 
 export default function InsurePage() {
-  const { connected, publicKey } = useWallet();
+  const { connected, publicKey, signTransaction } = useWallet();
+  const { connection } = useConnection();
   const [tokenAddress, setTokenAddress] = useState('');
   const [tokenSymbol, setTokenSymbol] = useState('');
   const [riskScore, setRiskScore] = useState<number | null>(null);
   const [amount, setAmount] = useState('100');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [walletError, setWalletError] = useState(false);
+  const [purchased, setPurchased] = useState(false);
+  const [txSignature, setTxSignature] = useState('');
 
   const handleLookup = async () => {
     if (!isValidSolanaAddress(tokenAddress)) {
@@ -47,31 +52,55 @@ export default function InsurePage() {
   const quote = riskScore !== null
     ? calculatePremium(tokenAddress, tokenSymbol, purchaseAmount, riskScore)
     : null;
+  const premium = quote?.premium ?? 0;
   const tier = riskScore !== null ? getPremiumTierDescription(riskScore) : null;
 
   const handlePurchase = async () => {
-    if (!connected || !publicKey || !quote) return;
+    if (!publicKey || !signTransaction) { setWalletError(true); return; }
     setLoading(true);
     try {
+      // 1. Build transaction
       const res = await fetch('/api/pay', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           walletAddress: publicKey.toBase58(),
+          amount: premium,
           serviceType: 'insurance',
-          amount: quote.premium,
-          tokenAddress,
         }),
       });
-      const data = await res.json();
-      if (data.success) {
-        // In production: sign transaction and verify
-        alert('Insurance purchase initiated! Transaction would be signed here.');
-      } else {
-        setError(data.error || 'Purchase failed');
+      const { transaction: txBase64, invoice } = await res.json();
+      
+      // 2. Sign with wallet
+      const tx = Transaction.from(Buffer.from(txBase64, 'base64'));
+      const signedTx = await signTransaction(tx);
+      
+      // 3. Send to chain
+      const signature = await connection.sendRawTransaction(signedTx.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+      });
+      const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+      await connection.confirmTransaction({ signature, ...latestBlockhash }, 'confirmed');
+      
+      // 4. Verify on server
+      const verifyRes = await fetch('/api/pay/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletAddress: publicKey.toBase58(),
+          invoice,
+          signature,
+        }),
+      });
+      const { verified } = await verifyRes.json();
+      
+      if (verified) {
+        setTxSignature(signature);
+        setPurchased(true);
       }
-    } catch {
-      setError('Purchase failed / 購買失敗');
+    } catch (err: any) {
+      setError(err.message || 'Transaction failed');
     } finally {
       setLoading(false);
     }
